@@ -11,7 +11,7 @@ import telegram
 import json
 
 from telegram import (ReplyKeyboardMarkup, ReplyKeyboardRemove, 
-                      InlineKeyboardMarkup, InlineKeyboardButton)
+                      InlineKeyboardMarkup, InlineKeyboardButton, Message)
 from telegram.ext import (Updater, CommandHandler, MessageHandler, Filters,
                           ConversationHandler)
 
@@ -22,12 +22,107 @@ with open('credentials.json') as json_file:
     REQUEST_KWARGS=data['REQUEST_KWARGS']
 
 # Enable logging.
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-                    level=logging.INFO)
+logging.basicConfig(format='%(asctime)s [%(name)s] [%(levelname)s]: %(message)s',
+                    level=logging.INFO,
+                    handlers=[
+                        logging.FileHandler("info.log"),
+                        logging.StreamHandler()])
 logger = logging.getLogger(__name__)
 
 
-# --- Conversation handling methods ---
+# --- Message deletion handling methods ---
+
+CHECK = range(1)
+
+def delete(update, context):
+    """Start post deletion.
+
+    Ask user post ID.
+    """
+
+    update.message.reply_text(
+        'Давай удалим пост.\n' 
+        'Какой у него ID?\n\n'
+        'Введи /cancel, чтобы отменить.')
+
+    return CHECK
+
+def check_del(update, context):
+    """Deleting post.
+    
+    1) Load messages from file.
+    2) Try to find message with given Id.
+    3) Check if message author and user match.
+    4) Delete message from file and channel.
+    """
+
+    user = update.message.from_user
+    message_id = int(update.message.text)
+
+    logger.info("(%s) intend to delete message (%s)", user.name, message_id)
+
+    # Loading messages from file.
+    with open('message_history.json') as json_file: 
+        data = json.load(json_file) 
+        messages = [eval(message) for message in data['messages']]
+
+    point_message = {}
+
+    # Searching in file for our message
+    # (with same message_id).
+    for message in messages:
+        if message['message_id'] == message_id:
+            point_message = message
+
+    # Check if message with given id exists.
+    if point_message == {}:
+        logger.info("Hadn't found message to delete with Id (%s)", message_id)
+        update.message.reply_text(
+                'Не нашли сообщение с Id {}.'.format(message_id))
+        return ConversationHandler.END
+    else:
+        logger.info("Found message to delete with Id (%s)", message_id)
+
+        # Check if message author and user match.
+        message_user_id = point_message['entities'][-1]['user']['id']
+        print(message_user_id)
+        if (user.id != message_user_id):
+            logger.info("User Id (%s) doesn't match "
+                        "with message user Id (%s)",
+                        user.id, message_user_id)
+            update.message.reply_text(
+                        'К сожалению, ты можешь удалить' 
+                        'только свой пост.')
+            return ConversationHandler.END
+        else:
+            logger.info("User Id (%s) match "
+                        "with message user Id (%s)",
+                        user.id, message_user_id)
+
+            # ToDO: remove msg from chat and from file.
+
+
+
+    return ConversationHandler.END
+
+def cancel_del(update, context):
+    """Cancel conversation."""
+
+    user = update.message.from_user
+
+    logger.info("(%s) canceled the conversation", user.name)
+
+    update.message.reply_text(
+        'Отменяем удаление сообщения.\n\n'
+        'Чтобы создать новое сообщение, введи \n /add.'
+        '\n'
+        'Чтобы удалить сообщение, введи \n /delete.',
+        reply_markup=ReplyKeyboardRemove())
+
+    return ConversationHandler.END
+
+
+# --- Message add handling methods ---
 
 GROUP, INFO, SEND = range(3)
 
@@ -58,7 +153,7 @@ def group(update, context):
     context.user_data['group'] = update.message.text
 
     user = update.message.from_user
-    logger.info("User %s want to send msg to: %s", user.name, update.message.text)
+    logger.info("(%s) intend to send to (%s)", user.name, update.message.text)
 
     update.message.reply_text(
         'Хорошо.\n'
@@ -79,7 +174,7 @@ def info(update, context):
     context.user_data['info'] = update.message.text
 
     user = update.message.from_user
-    logger.info("User %s want to send info: %s", user.name, update.message.text)
+    logger.info("(%s) intend to send info (%s)", user.name, update.message.text)
 
     update.message.reply_text(
         'Отлично!\n' 
@@ -97,13 +192,21 @@ def send(update, context):
 
     user = update.message.from_user
 
-    logger.info("User %s approved message sending", user.name)
+    logger.info("(%s) approved message sending", user.name)
 
     # Sending message to channel.
-    context.bot.send_message(
+    msg=context.bot.send_message(
         chat_id='@matobes_news', 
         text=form_msg(update, context),
         parse_mode=telegram.ParseMode.MARKDOWN)
+
+    # Writing message to file. 
+    with open('message_history.json') as json_file: 
+        data = json.load(json_file) 
+        temp = data['messages'] 
+        temp.append(str(msg)) 
+    with open('message_history.json', 'w') as json_file: 
+        json.dump(data, json_file, indent=4) 
 
     update.message.reply_text(
         'Отправляю сообщение на канал.\n\n'
@@ -112,16 +215,18 @@ def send(update, context):
 
     return ConversationHandler.END
 
-def cancel(update, context):
+def cancel_add(update, context):
     """Cancel conversation."""
 
     user = update.message.from_user
 
-    logger.info("User %s canceled the conversation.", user.name)
+    logger.info("(%s) canceled the conversation", user.name)
 
     update.message.reply_text(
         'Отменяем создание сообщения.\n\n'
-        'Чтобы создать новое сообщение, введи \n /add.',
+        'Чтобы создать новое сообщение, введи \n /add.'
+        '\n'
+        'Чтобы удалить сообщение, введи \n /delete.',
         reply_markup=ReplyKeyboardRemove())
 
     return ConversationHandler.END
@@ -145,10 +250,20 @@ def form_msg(update, context):
     msg = ""
     user = update.message.from_user
 
+    # Getting message id.
+    # It equals last message id + 1.
+    with open('message_history.json') as json_file: 
+        data = json.load(json_file) 
+        temp = data['messages'] 
+        loaded_msg = eval(temp[-1])
+        message_id = loaded_msg['message_id'] + 1
+
     msg += "*Кому:* {}".format(context.user_data['group'])
     msg += "\n\n"
     msg += "*Что:* {}".format(context.user_data['info'])
     msg += "\n\n"
+    msg += "*Id:* {}".format(message_id)
+    msg += "\n"
     msg += "*От кого:* {}".format(user.mention_markdown())
 
     return msg
@@ -164,8 +279,8 @@ def main():
     updater = Updater(TOKEN, request_kwargs=REQUEST_KWARGS, use_context=True)
     dp = updater.dispatcher
 
-    # Add conversation handler with the states GROUP, INFO, SEND
-    conv_handler = ConversationHandler(
+    # Add message add handler with the states GROUP, INFO, SEND
+    msg_add_handler = ConversationHandler(
         entry_points=[CommandHandler('add', add)],
 
         states={
@@ -176,11 +291,23 @@ def main():
             SEND: [MessageHandler(Filters.regex('^(Отправляем!)$'), send)]
         },
 
-        fallbacks=[CommandHandler('cancel', cancel)]
+        fallbacks=[CommandHandler('cancel', cancel_add)]
+    )
+
+    # Add message add handler with the states GROUP, INFO, SEND
+    msg_del_handler = ConversationHandler(
+        entry_points=[CommandHandler('delete', delete)],
+
+        states={
+            CHECK: [MessageHandler(Filters.regex('^([0-9]*)$'), check_del)],
+        },
+
+        fallbacks=[CommandHandler('cancel', cancel_del)]
     )
 
     dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(conv_handler)
+    dp.add_handler(msg_add_handler)
+    dp.add_handler(msg_del_handler)
 
     # log all errors
     dp.add_error_handler(error)
