@@ -18,8 +18,8 @@ from telegram.ext import (Updater, CommandHandler, MessageHandler, Filters,
 # Loading credentials.
 with open('credentials.json') as json_file:
     data = json.load(json_file)
-    TOKEN=data['TOKEN']
-    REQUEST_KWARGS=data['REQUEST_KWARGS']
+    TOKEN = data['TOKEN']
+    REQUEST_KWARGS = data['REQUEST_KWARGS']
 
 # Enable logging.
 logging.basicConfig(format='%(asctime)s [%(name)s] [%(levelname)s]: %(message)s',
@@ -78,7 +78,9 @@ def check_del(update, context):
     if point_message == {}:
         logger.info("Hadn't found message to delete with Id (%s)", message_id)
         update.message.reply_text(
-                'Не нашли сообщение с Id {}.'.format(message_id))
+                'Не нашли сообщение с номером {}.'.format(message_id))
+
+        help_bot(update, context)
         return ConversationHandler.END
     else:
         logger.info("Found message to delete with Id (%s)", message_id)
@@ -93,15 +95,36 @@ def check_del(update, context):
             update.message.reply_text(
                         'К сожалению, ты можешь удалить' 
                         'только свой пост.')
+
+            help_bot(update, context)
             return ConversationHandler.END
         else:
             logger.info("User Id (%s) match "
                         "with message user Id (%s)",
                         user.id, message_user_id)
 
-            # ToDO: remove msg from chat and from file.
+            logger.info("(%s) deleting "
+                        "message (%s)",
+                        user.name, message_id)
+
+            # Deleting message from chat.
+            context.bot.delete_message(
+                    chat_id='@matobes_news', 
+                    message_id=message_id)
+
+            # Deleting message from file.
+            with open("message_history.json", "r") as f:
+                lines = f.readlines()
+            with open("message_history.json", "w") as f:
+                for line in lines:
+                    if not str(message_id) in line:
+                        f.write(line)
+
+            update.message.reply_text(
+                    'Сообщение с номером {} удалено!'.format(message_id))
 
 
+    help_bot(update, context)
 
     return ConversationHandler.END
 
@@ -113,18 +136,17 @@ def cancel_del(update, context):
     logger.info("(%s) canceled the conversation", user.name)
 
     update.message.reply_text(
-        'Отменяем удаление сообщения.\n\n'
-        'Чтобы создать новое сообщение, введи \n /add.'
-        '\n'
-        'Чтобы удалить сообщение, введи \n /delete.',
+        'Отменяем удаление сообщения.\n\n',
         reply_markup=ReplyKeyboardRemove())
+
+    help_bot(update, context)
 
     return ConversationHandler.END
 
 
 # --- Message add handling methods ---
 
-GROUP, INFO, SEND = range(3)
+GROUP, SUBJECT, INFO, SEND = range(4)
 
 def add(update, context):
     """Start post creation.
@@ -146,7 +168,7 @@ def add(update, context):
 def group(update, context):
     """Receive info about whom to send.
 
-    Ask user for information he want to add.
+    Ask user for message subject.
     """
 
     # Writing group that we got to buffer.
@@ -157,9 +179,24 @@ def group(update, context):
 
     update.message.reply_text(
         'Хорошо.\n'
-        'Теперь добавь информацию, '
-        'которой хочешь поделиться:',
+        'Добавь тему сообщения:',
         reply_markup=ReplyKeyboardRemove())
+
+    return SUBJECT
+
+def subject(update, context):
+    """Receive message subject.
+
+    Ask user for information he want to add.
+    """
+    context.user_data['subject'] = update.message.text
+
+    user = update.message.from_user
+    logger.info("(%s) intend to add subject (%s)", user.name, update.message.text)
+
+    update.message.reply_text(
+        'Теперь добавь информацию, '
+        'которой хочешь поделиться:')
 
     return INFO
 
@@ -209,9 +246,10 @@ def send(update, context):
         json.dump(data, json_file, indent=4) 
 
     update.message.reply_text(
-        'Отправляю сообщение на канал.\n\n'
-        'Чтобы отправить ещё сообщение, введи \n /add.',
+        'Отправляю сообщение на канал.\n\n',
         reply_markup=ReplyKeyboardRemove())
+
+    help_bot(update, context)
 
     return ConversationHandler.END
 
@@ -223,11 +261,10 @@ def cancel_add(update, context):
     logger.info("(%s) canceled the conversation", user.name)
 
     update.message.reply_text(
-        'Отменяем создание сообщения.\n\n'
-        'Чтобы создать новое сообщение, введи \n /add.'
-        '\n'
-        'Чтобы удалить сообщение, введи \n /delete.',
+        'Отменяем создание сообщения.\n\n',
         reply_markup=ReplyKeyboardRemove())
+
+    help_bot(update, context)
 
     return ConversationHandler.END
 
@@ -242,7 +279,15 @@ def start(update, context):
         'Здесь ты можешь создать информационное сообщение '
         'для новостного канала матобеса:\n\n' 
         'https://t.me/matobes_news\n\n'
-        'Для начала введи /add.')
+        'Для начала введи /help.')
+
+def help_bot(update, context):
+    """Send a message when the command /help is issued."""
+
+    update.message.reply_text(
+        'Доступные команды:\n\n'
+        'Чтобы создать новое сообщение, введи \n /add.\n'
+        'Чтобы удалить сообщение, введи \n /delete.')
 
 def form_msg(update, context):
     """Format message."""
@@ -260,7 +305,9 @@ def form_msg(update, context):
 
     msg += "*Кому:* {}".format(context.user_data['group'])
     msg += "\n\n"
-    msg += "*Что:* {}".format(context.user_data['info'])
+    msg += "*Тема:* {}".format(context.user_data['subject'])
+    msg += "\n\n"
+    msg += "{}".format(context.user_data['info'])
     msg += "\n\n"
     msg += "*Id:* {}".format(message_id)
     msg += "\n"
@@ -279,12 +326,14 @@ def main():
     updater = Updater(TOKEN, request_kwargs=REQUEST_KWARGS, use_context=True)
     dp = updater.dispatcher
 
-    # Add message add handler with the states GROUP, INFO, SEND
+    # Add message add handler with the states GROUP, SUBJECT, INFO, SEND
     msg_add_handler = ConversationHandler(
         entry_points=[CommandHandler('add', add)],
 
         states={
             GROUP: [MessageHandler(Filters.regex('^(Весь поток|341|344)$'), group)],
+
+            SUBJECT: [MessageHandler(Filters.text, subject)],
 
             INFO: [MessageHandler(Filters.text, info)],
 
@@ -306,6 +355,7 @@ def main():
     )
 
     dp.add_handler(CommandHandler("start", start))
+    dp.add_handler(CommandHandler("help", help_bot))
     dp.add_handler(msg_add_handler)
     dp.add_handler(msg_del_handler)
 
