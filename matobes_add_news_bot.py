@@ -113,16 +113,17 @@ def check_del(update, context):
                     message_id=message_id)
 
             # Deleting message from file.
-            with open("message_history.json", "r") as f:
-                lines = f.readlines()
-            with open("message_history.json", "w") as f:
-                for line in lines:
-                    if not str(message_id) in line:
-                        f.write(line)
+            with open('message_history.json') as json_file: 
+                data = json.load(json_file) 
+                temp = data['messages'] 
+            for msg in temp:
+                if str(message_id) in msg:
+                    temp.remove(msg)
+            with open('message_history.json', 'w') as json_file: 
+                json.dump(data, json_file, indent=4) 
 
             update.message.reply_text(
                     'Сообщение с номером {} удалено!'.format(message_id))
-
 
     help_bot(update, context)
 
@@ -196,7 +197,8 @@ def subject(update, context):
 
     update.message.reply_text(
         'Теперь добавь информацию, '
-        'которой хочешь поделиться:')
+        'которой хочешь поделиться\n'
+        '(только текст):')
 
     return INFO
 
@@ -240,6 +242,7 @@ def send(update, context):
     # Writing message to file. 
     with open('message_history.json') as json_file: 
         data = json.load(json_file) 
+        data['last_message_id'] = msg.message_id
         temp = data['messages'] 
         temp.append(str(msg)) 
     with open('message_history.json', 'w') as json_file: 
@@ -295,13 +298,10 @@ def form_msg(update, context):
     msg = ""
     user = update.message.from_user
 
-    # Getting message id.
-    # It equals last message id + 1.
+    # Getting message id from messages file.
     with open('message_history.json') as json_file: 
         data = json.load(json_file) 
-        temp = data['messages'] 
-        loaded_msg = eval(temp[-1])
-        message_id = loaded_msg['message_id'] + 1
+        message_id = data['last_message_id'] 
 
     msg += "*Кому:* {}".format(context.user_data['group'])
     msg += "\n\n"
@@ -309,7 +309,7 @@ def form_msg(update, context):
     msg += "\n\n"
     msg += "{}".format(context.user_data['info'])
     msg += "\n\n"
-    msg += "*Id:* {}".format(message_id)
+    msg += "*Id:* {}".format(message_id + 1)
     msg += "\n"
     msg += "*От кого:* {}".format(user.mention_markdown())
 
