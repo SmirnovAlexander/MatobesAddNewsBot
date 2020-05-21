@@ -93,7 +93,7 @@ def check_del(update, context):
                         "with message user Id (%s)",
                         user.id, message_user_id)
             update.message.reply_text(
-                        'К сожалению, ты можешь удалить' 
+                        'К сожалению, ты можешь удалить ' 
                         'только свой пост.')
 
             help_bot(update, context)
@@ -323,10 +323,10 @@ def error(update, context):
 
 def main():
 
-    updater = Updater(TOKEN, request_kwargs=REQUEST_KWARGS, use_context=True)
+    updater = Updater(TOKEN, use_context=True)
     dp = updater.dispatcher
 
-    # Add message add handler with the states GROUP, SUBJECT, INFO, SEND
+    # Add message add handler with the states GROUP, SUBJECT, INFO, SEND.
     msg_add_handler = ConversationHandler(
         entry_points=[CommandHandler('add', add)],
 
@@ -343,7 +343,7 @@ def main():
         fallbacks=[CommandHandler('cancel', cancel_add)]
     )
 
-    # Add message add handler with the states GROUP, INFO, SEND
+    # Add message add handler with the states GROUP, INFO, SEND.
     msg_del_handler = ConversationHandler(
         entry_points=[CommandHandler('delete', delete)],
 
@@ -359,10 +359,10 @@ def main():
     dp.add_handler(msg_add_handler)
     dp.add_handler(msg_del_handler)
 
-    # log all errors
+    # Log all errors.
     dp.add_error_handler(error)
 
-    # Start the Bot
+    # Start the Bot.
     updater.start_polling()
     updater.idle()
 
